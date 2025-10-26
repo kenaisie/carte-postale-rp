@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Carte Postale RP — Créateur</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#f3efe6;--card-w:900px;--card-h:600px}
+    *{box-sizing:border-box}
+    body{font-family:Playfair Display, serif;background:var(--bg);margin:0;color:#222;padding:18px}
+    header{display:flex;gap:16px;align-items:center;justify-content:space-between}
+    h1{margin:0;font-size:20px}
+    .wrap{max-width:1200px;margin:18px auto}
+
+    .controls{display:grid;grid-template-columns:320px 1fr;gap:18px;margin-top:18px}
+    .panel{background:#fff;padding:14px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.06)}
+
+    label{display:block;font-size:13px;margin-top:8px}
+    input[type=text], select, textarea{width:100%;padding:8px;border-radius:6px;border:1px solid #ddd;font-size:14px}
+    button{padding:10px 12px;border-radius:8px;border:0;background:#2f5d3b;color:#fff;font-weight:600;cursor:pointer}
+    small{color:#666}
+
+    /* area preview */
+    .previewWrap{display:flex;gap:18px;align-items:flex-start}
+    .cardStage{width:var(--card-w);height:var(--card-h);perspective:1400px}
+    .card3d{width:100%;height:100%;position:relative;transform-style:preserve-3d;transition:transform .9s}
+    .face{position:absolute;inset:0;border-radius:12px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.18);background-size:cover;background-position:center}
+    .front{transform:rotateY(0deg);z-index:2}
+    .back{transform:rotateY(180deg);display:flex;flex-direction:column;padding:28px;background:#fff}
+    .card3d.flipped{transform:rotateY(180deg)}
+
+    /* verso content layout */
+    .lines{flex:1;position:relative}
+    .line{height:28px;border-bottom:1px dashed rgba(0,0,0,.08);margin-bottom:10px}
+    .typedText{position:absolute;left:18px;top:18px;right:18px;bottom:18px;pointer-events:none;white-space:pre-wrap}
+    .signature{font-family:'Great Vibes', cursive;font-size:26px;margin-top:8px}
+
+    .toolbar{display:flex;gap:8px;align-items:center;margin-top:8px}
+    .templates{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    .tmpl{width:70px;height:48px;border-radius:6px;overflow:hidden;border:2px solid transparent;cursor:pointer}
+    .tmpl.selected{border-color:#2f5d3b}
+
+    /* drawing canvas overlay */
+    .drawCanvas{position:absolute;left:0;top:0;width:100%;height:100%;}
+
+    .footerNote{margin-top:12px;color:#444;font-size:13px}
+
+    @media(max-width:1100px){:root{--card-w:700px;--card-h:467px}}
+    @media(max-width:880px){.controls{grid-template-columns:1fr} .previewWrap{flex-direction:column} .cardStage{width:100%;height:auto}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Constructeur de carte postale (RP) — style fin XIXe</h1>
+      <div><small>Historique réaliste — modèle personnalisable</small></div>
+    </header>
+
+    <div class="controls">
+      <div class="panel" id="panel">
+        <h3>Options de création</h3>
+
+        <label>Modèle (recto/verso prédéfini)</label>
+        <div class="templates" id="templates"></div>
+        <small>Remplace les images dans le dossier /assets pour ajouter tes propres dessins (voir instructions).</small>
+
+        <label>Téléverser ton propre verso</label>
+        <input type="file" id="uploadVerso" accept="image/*">
+
+        <label>Mode d'écriture</label>
+        <select id="modeText">
+          <option value="typed">Texte tapé (police manuscrite)</option>
+          <option value="draw">Écrire à la main (dessin)</option>
+        </select>
+
+        <label>Texte du message (si texte tapé)</label>
+        <textarea id="typedInput" rows="6" placeholder="Mon cher ami,\nJe t'écris depuis la gare..."></textarea>
+
+        <label>Destinataire</label>
+        <input type="text" id="recipient" placeholder="Mme. A. Dupont">
+        <label>Expéditeur / Signature</label>
+        <input type="text" id="sender" placeholder="Lucien" />
+
+        <div class="toolbar">
+          <button id="flipBtn">Retourner la carte</button>
+          <button id="downloadBtn">Télécharger PNG</button>
+          <button id="shareBtn">Générer lien partageable</button>
+        </div>
+
+        <div class="footerNote">Conseil : si tu choisis le mode "Écrire à la main", utilise la souris ou un stylet pour écrire sur le verso. Les traits restent vectoriels sur la toile et sont inclus dans l'image exportée.</div>
+      </div>
+
+      <div class="panel previewWrap">
+        <div class="cardStage">
+          <div class="card3d" id="card3d">
+            <div class="face front" id="frontFace" style="background-image:url('assets/recto_default.jpg')"></div>
+            <div class="face back" id="backFace">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <div>
+                  <div style="font-size:13px;color:#555">À : <span id="toPreview">—</span></div>
+                </div>
+                <div style="text-align:right;font-size:12px;color:#555">De : <span id="fromPreview">—</span></div>
+              </div>
+
+              <div class="lines" id="linesArea">
+                <!-- dashed lines background (pure CSS) -->
+                <div class="typedText" id="typedPreview"></div>
+                <canvas class="drawCanvas" id="drawCanvas"></canvas>
+              </div>
+
+              <div class="signature" id="sigPreview"></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex:1;min-width:260px">
+          <h3>Aperçu & actions</h3>
+          <p><small>Clique sur la carte pour la retourner. Ajuste texte, mode d'écriture et modèles à gauche.</small></p>
+
+          <div style="margin-top:10px">
+            <button id="addLineBtn">Effacer l'écriture</button>
+            <button id="clearTemplateBtn">Réinitialiser modèles</button>
+          </div>
+
+          <div style="margin-top:12px">
+            <strong>Astuce d'intégration :</strong>
+            <p style="margin:6px 0">Héberge ce dossier sur Netlify ou GitHub Pages puis <code>Insérer &gt; Incorporer &gt; URL</code> dans Google Sites.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section style="margin-top:18px" class="panel">
+      <h3>Instructions rapides</h3>
+      <ol>
+        <li>Remplace ou ajoute tes images dans <code>/assets</code> : <code>recto_default.jpg</code>, <code>verso_default.jpg</code>, et les miniatures listées dans le script.</li>
+        <li>Dépose le dossier sur Netlify (drag & drop) ou GitHub Pages (push sur repo + activer Pages).</li>
+        <li>Copie l'URL et intègre la page dans Google Sites via <em>Insérer → Incorporer</em>.</li>
+      </ol>
+    </section>
+  </div>
+
+<script>
+// --- CONFIG : remplace ces chemins par tes propres images (assets/...) ---
+const TEMPLATES = [
+  {id:'classic', name:'Classique', recto:'assets/recto_default.jpg', verso:'assets/verso_default.jpg', thumb:'assets/thumb1.jpg'},
+  {id:'paris', name:'Paris', recto:'assets/recto_paris.jpg', verso:'assets/verso_paris.jpg', thumb:'assets/thumb2.jpg'},
+  // Ajoute autant que tu veux — le user pourra remplacer les images dans /assets
+];
+
+// --- éléments DOM ---
+const templatesEl = document.getElementById('templates');
+const frontFace = document.getElementById('frontFace');
+const backFace = document.getElementById('backFace');
+const card3d = document.getElementById('card3d');
+const typedInput = document.getElementById('typedInput');
+const typedPreview = document.getElementById('typedPreview');
+const recipient = document.getElementById('recipient');
+const sender = document.getElementById('sender');
+const toPreview = document.getElementById('toPreview');
+const fromPreview = document.getElementById('fromPreview');
+const sigPreview = document.getElementById('sigPreview');
+const modeText = document.getElementById('modeText');
+const uploadVerso = document.getElementById('uploadVerso');
+const flipBtn = document.getElementById('flipBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const shareBtn = document.getElementById('shareBtn');
+const drawCanvas = document.getElementById('drawCanvas');
+const linesArea = document.getElementById('linesArea');
+const addLineBtn = document.getElementById('addLineBtn');
+
+let currentTemplate = TEMPLATES[0];
+let drawing = false;
+let ctx, isDrawingMode = false;
+let paths = [];
+let currentPath = null;
+
+function initTemplates(){
+  templatesEl.innerHTML='';
+  TEMPLATES.forEach(t=>{
+    const d = document.createElement('div');
+    d.className='tmpl';
+    d.title=t.name;
+    d.style.backgroundImage=`url(${t.thumb})`;
+    d.style.backgroundSize='cover';
+    d.addEventListener('click',()=>selectTemplate(t.id));
+    templatesEl.appendChild(d);
+    if(t.id===currentTemplate.id) d.classList.add('selected');
+  })
+}
+
+function selectTemplate(id){
+  currentTemplate = TEMPLATES.find(x=>x.id===id)||TEMPLATES[0];
+  frontFace.style.backgroundImage = `url('${currentTemplate.recto}')`;
+  backFace.style.backgroundImage = `url('${currentTemplate.verso}')`;
+  [...templatesEl.children].forEach(c=>c.classList.remove('selected'));
+  const sel = Array.from(templatesEl.children).find(ch=>ch.title===currentTemplate.name);
+  if(sel) sel.classList.add('selected');
+  resetDraw();
+}
+
+// canvas drawing setup
+function setupCanvas(){
+  function resize(){
+    const rect = linesArea.getBoundingClientRect();
+    drawCanvas.width = rect.width;
+    drawCanvas.height = rect.height;
+    drawCanvas.style.width = rect.width+'px';
+    drawCanvas.style.height = rect.height+'px';
+    redrawAll();
+  }
+  window.addEventListener('resize',resize);
+  resize();
+  ctx = drawCanvas.getContext('2d');
+  ctx.lineCap='round';
+  ctx.lineJoin='round';
+  ctx.lineWidth=2.8;
+  ctx.strokeStyle='#2b2b2b';
+
+  drawCanvas.addEventListener('pointerdown', (e)=>{
+    if(!isDrawingMode) return;
+    drawing=true;
+    currentPath=[];
+    const p = getPointer(e);
+    currentPath.push(p);
+  });
+  window.addEventListener('pointerup', ()=>{
+    if(drawing && currentPath && currentPath.length){ paths.push(currentPath); currentPath=null; }
+    drawing=false;
+  });
+  drawCanvas.addEventListener('pointermove', (e)=>{
+    if(!drawing) return;
+    const p = getPointer(e);
+    currentPath.push(p);
+    redrawAll();
+  });
+}
+function getPointer(e){
+  const r = drawCanvas.getBoundingClientRect();
+  return {x:e.clientX - r.left, y:e.clientY - r.top};
+}
+function redrawAll(){
+  if(!ctx) return;
+  ctx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
+  ctx.lineWidth = Math.max(1.6, drawCanvas.width/400*2.8);
+  ctx.strokeStyle = '#2b2b2b';
+  paths.forEach(path=>{
+    ctx.beginPath();
+    path.forEach((pt,i)=>{ if(i===0) ctx.moveTo(pt.x,pt.y); else ctx.lineTo(pt.x,pt.y); });
+    ctx.stroke();
+  });
+  if(currentPath){ ctx.beginPath(); currentPath.forEach((pt,i)=>{ if(i===0) ctx.moveTo(pt.x,pt.y); else ctx.lineTo(pt.x,pt.y); }); ctx.stroke(); }
+}
+
+function resetDraw(){ paths=[]; currentPath=null; redrawAll(); }
+
+// bind inputs
+typedInput.addEventListener('input', ()=>{ typedPreview.textContent = typedInput.value; });
+recipient.addEventListener('input', ()=>{ toPreview.textContent = recipient.value || '—'; });
+sender.addEventListener('input', ()=>{ fromPreview.textContent = sender.value || '—'; sigPreview.textContent = sender.value || ''; });
+
+modeText.addEventListener('change', ()=>{
+  isDrawingMode = modeText.value === 'draw';
+  drawCanvas.style.pointerEvents = isDrawingMode ? 'auto' : 'none';
+  typedInput.disabled = isDrawingMode;
+});
+
+uploadVerso.addEventListener('change',(ev)=>{
+  const f = ev.target.files[0];
+  if(!f) return;
+  const url = URL.createObjectURL(f);
+  backFace.style.backgroundImage = `url('${url}')`;
+});
+
+flipBtn.addEventListener('click', ()=>card3d.classList.toggle('flipped'));
+card3d.addEventListener('click', ()=>card3d.classList.toggle('flipped'));
+
+addLineBtn.addEventListener('click', ()=>{ resetDraw(); });
+
+clearTemplateBtn.addEventListener('click', ()=>{ selectTemplate(TEMPLATES[0].id); typedInput.value=''; typedPreview.textContent=''; recipient.value=''; sender.value=''; toPreview.textContent='—'; fromPreview.textContent='—'; sigPreview.textContent=''; resetDraw(); });
+
+// download / export logic
+function exportCardPNG(){
+  // render front and back separately depending on visible side
+  // We'll render the back (with typed text and drawings) and front into a single composed image: recto on left, verso on right (or only the currently visible face)
+  const w = 1200; const h = 800; // export size
+  const out = document.createElement('canvas'); out.width=w; out.height=h; const octx = out.getContext('2d');
+
+  // draw recto
+  const frontImg = new Image(); frontImg.crossOrigin='anonymous';
+  frontImg.src = window.getComputedStyle(frontFace).backgroundImage.replace(/^url\("?(.+)"?\)$/,'$1');
+
+  // draw verso background
+  const backImg = new Image(); backImg.crossOrigin='anonymous';
+  backImg.src = window.getComputedStyle(backFace).backgroundImage.replace(/^url\("?(.+)"?\)$/,'$1');
+
+  Promise.all([loadImage(frontImg), loadImage(backImg)]).then(([fImg,bImg])=>{
+    // left = front, right = back
+    const halfW = w/2;
+    octx.fillStyle='#fff'; octx.fillRect(0,0,w,h);
+    // front
+    octx.drawImage(fImg,0,0,halfW,h);
+    // back bg
+    octx.drawImage(bImg,halfW,0,halfW,h);
+
+    // draw typed text onto back area
+    octx.save();
+    octx.translate(halfW,0);
+    // text style
+    octx.font = '18px "Playfair Display"';
+    octx.fillStyle = '#1f1f1f';
+    const lines = (typedInput.value||'').split('\n');
+    let startY = 90;
+    lines.forEach(ln=>{ wrapText(octx, ln, 24, startY, halfW-48, 22); startY+=22; });
+    // signature
+    octx.font = '42px Great Vibes, cursive';
+    octx.fillText(sender.value||'', 36, startY+34);
+    octx.restore();
+
+    // draw recipient/sender small
+    octx.font='16px Playfair Display'; octx.fillStyle='#111';
+    octx.fillText('À : ' + (recipient.value||''), 36, h-60);
+    octx.fillText('De : ' + (sender.value||''), halfW+36, h-60);
+
+    // draw drawings (paths) by scaling canvas
+    if(paths.length>0){
+      const tmp = document.createElement('canvas'); tmp.width = drawCanvas.width; tmp.height = drawCanvas.height; const tctx = tmp.getContext('2d');
+      tctx.lineWidth = ctx.lineWidth; tctx.strokeStyle = '#2b2b2b';
+      paths.forEach(p=>{ tctx.beginPath(); p.forEach((pt,i)=>{ if(i===0) tctx.moveTo(pt.x,pt.y); else tctx.lineTo(pt.x,pt.y); }); tctx.stroke(); });
+      // scale and draw onto back half
+      octx.drawImage(tmp, halfW+36, 120, halfW-72, h-220);
+    }
+
+    // trigger download
+    const data = out.toDataURL('image/png');
+    const a = document.createElement('a'); a.href=data; a.download = 'carte_rp.png'; a.click();
+  }).catch(err=>{ alert('Erreur lors de la génération : '+err); });
+}
+
+function loadImage(img){
+  return new Promise((res,rej)=>{ if(img.complete && img.naturalWidth!==0) return res(img); img.onload=()=>res(img); img.onerror=()=>rej('image load failed'); });
+}
+
+function wrapText(ctx, text, x, y, maxWidth, lineHeight){
+  var words = text.split(' ');
+  var line = '';
+  for(var n = 0; n < words.length; n++){
+    var testLine = line + words[n] + ' ';
+    var metrics = ctx.measureText(testLine);
+    var testWidth = metrics.width;
+    if (testWidth > maxWidth && n > 0){ ctx.fillText(line, x, y); line = words[n] + ' '; y += lineHeight; }
+    else { line = testLine; }
+  }
+  ctx.fillText(line, x, y);
+}
+
+downloadBtn.addEventListener('click', exportCardPNG);
+
+// shareable link using URL-encoded state
+function getState(){
+  return {
+    t: currentTemplate.id,
+    recipient: recipient.value,
+    sender: sender.value,
+    typed: typedInput.value,
+    mode: modeText.value,
+    paths: btoa(unescape(encodeURIComponent(JSON.stringify(paths))))
+  };
+}
+function setStateFromURL(){
+  const q = new URLSearchParams(location.search);
+  const s = q.get('s');
+  if(!s) return;
+  try{
+    const json = JSON.parse(decodeURIComponent(escape(atob(s))));
+    if(json.t) selectTemplate(json.t);
+    recipient.value = json.recipient||''; sender.value = json.sender||''; typedInput.value = json.typed||''; modeText.value=json.mode||'typed';
+    // restore drawing if present
+    if(json.paths){ paths = JSON.parse(json.paths); }
+    typedPreview.textContent = typedInput.value; toPreview.textContent = recipient.value||'—'; fromPreview.textContent = sender.value||'—'; sigPreview.textContent = sender.value||'';
+    isDrawingMode = modeText.value==='draw'; drawCanvas.style.pointerEvents = isDrawingMode ? 'auto' : 'none';
+    redrawAll();
+  }catch(e){ console.warn('invalid state',e); }
+}
+
+shareBtn.addEventListener('click', ()=>{
+  const state = getState();
+  // we need to keep link small: include paths only if small
+  let encoded = '';
+  try{
+    // we include paths if not too big
+    const s = JSON.stringify(state);
+    if(s.length>1800){ // too large for URL
+      alert('Le contenu est trop volumineux pour un lien. Télécharge la carte ou héberge-la sur ton site après export.');
+      return;
+    }
+    encoded = btoa(unescape(encodeURIComponent(s)));
+  }catch(e){ return alert('Erreur lors du codage du lien'); }
+  const url = location.origin + location.pathname + '?s=' + encoded;
+  prompt('Copie ce lien pour le partager :', url);
+});
+
+// init
+initTemplates(); selectTemplate(currentTemplate.id); setupCanvas(); setStateFromURL();
+
+</script>
+</body>
+</html>

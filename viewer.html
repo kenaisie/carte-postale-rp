@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Carte Postale RP — Viewer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Homemade+Apple&display=swap" rel="stylesheet">
+  <style>
+    body{font-family:"Playfair Display",serif;background:#f3efe6;margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh}
+    .postcard{width:640px;height:400px;perspective:1200px;position:relative;cursor:pointer}
+    .inner{width:100%;height:100%;transform-style:preserve-3d;transition:transform .8s}
+    .postcard.flipped .inner{transform:rotateY(180deg)}
+    .face{position:absolute;width:100%;height:100%;backface-visibility:hidden;border-radius:6px;overflow:hidden;box-shadow:0 4px 10px rgba(0,0,0,.3)}
+    .front{background-size:cover;background-position:center}
+    .back{transform:rotateY(180deg);background:#f3efe6;display:flex;flex-direction:column;justify-content:flex-start;padding:30px}
+    textarea{flex:1;border:none;background:transparent;font-family:"Homemade Apple",cursive;font-size:20px;resize:none;line-height:1.5}
+    canvas{position:absolute;inset:0;z-index:2;pointer-events:none}
+    small{margin-top:10px;color:#555}
+  </style>
+</head>
+<body>
+  <div class="postcard" id="postcard" title="Click to flip">
+    <div class="inner">
+      <div class="face front" id="front"></div>
+      <div class="face back" id="back">
+        <canvas id="draw"></canvas>
+        <textarea id="msg" readonly></textarea>
+      </div>
+    </div>
+  </div>
+  <small>(click the postcard to flip)</small>
+
+<script>
+const card=document.getElementById('postcard');
+const front=document.getElementById('front');
+const back=document.getElementById('back');
+const canvas=document.getElementById('draw');
+const ctx=canvas.getContext('2d');
+const msg=document.getElementById('msg');
+
+card.onclick=()=>card.classList.toggle('flipped');
+function resize(){canvas.width=back.clientWidth;canvas.height=back.clientHeight;}
+window.addEventListener('resize',resize);resize();
+
+async function loadData(){
+  const src=new URLSearchParams(location.search).get('src');
+  if(!src)return alert('No postcard data found.');
+  const res=await fetch(src);
+  const data=await res.json();
+  URL.revokeObjectURL(src); // free memory
+
+  front.style.backgroundImage=`url('${data.frontImage}')`;
+  if(data.mode==='typed'){msg.value=data.text;}
+  else{
+    msg.style.display='none';
+    const strokes=data.strokes||[];
+    ctx.strokeStyle='#1e1b16';
+    ctx.lineWidth=2;ctx.lineCap='round';
+    for(let s of strokes){
+      if(!s.length)continue;
+      ctx.beginPath();
+      ctx.moveTo(s[0][0],s[0][1]);
+      for(let i=1;i<s.length;i++)ctx.lineTo(s[i][0],s[i][1]);
+      ctx.stroke();
+    }
+  }
+}
+loadData();
+</script>
+</body>
+</html>

@@ -3,9 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Carte Postale RP — Créateur</title>
+  <title>Carte Postale RP</title>
 
-  <!-- Fonts from Zealandia -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Playfair+Display:wght@400;700&family=Cormorant+Garamond&family=Homemade+Apple&display=swap" rel="stylesheet">
@@ -20,11 +19,9 @@
       color:#222;
       padding:18px;
     }
-
     header{display:flex;gap:16px;align-items:center;justify-content:space-between}
     h1{margin:0;font-size:20px}
     .wrap{max-width:1200px;margin:18px auto}
-
     .controls{display:grid;grid-template-columns:320px 1fr;gap:18px;margin-top:18px}
     .panel{
       background:#fff;
@@ -51,7 +48,6 @@
     }
     small{color:#666}
 
-    /* postcard styles (from functional code) */
     .postcard{
       width:640px;
       height:400px;
@@ -83,22 +79,10 @@
       transform:rotateY(180deg);
       background:#f3efe6;
       position:relative;
-      overflow:hidden;
       display:flex;
       flex-direction:column;
       justify-content:flex-start;
       padding:30px;
-    }
-    .back::before{
-      content:'';
-      position:absolute;
-      inset:0;
-      background-image:var(--verso-img);
-      background-size:cover;
-      background-position:center;
-      background-repeat:no-repeat;
-      opacity:.35;
-      z-index:0;
     }
     textarea{
       flex:1;
@@ -135,28 +119,28 @@
 
     <div class="controls">
       <div class="panel">
-        <h3>Options de création</h3>
+        <h3>Creation options</h3>
 
-        <label>Image verso</label>
-        <input type="file" id="uploadVerso" accept="image/*">
+        <label>Front image</label>
+        <input type="file" id="uploadFront" accept="image/*">
 
-        <label>Mode d'écriture</label>
+        <label>Writing mode</label>
         <select id="mode">
-          <option value="typed">Texte</option>
-          <option value="handwrite">Manuel</option>
+          <option value="typed">Text</option>
+          <option value="handwrite">Manual</option>
         </select>
 
-        <label>Texte du message</label>
-        <textarea id="textArea" rows="4" placeholder="Mon cher ami,&#10;Je t'écris depuis la gare..."></textarea>
+        <label>Message text</label>
+        <textarea id="textArea" rows="4" placeholder="My dear friend,&#10;I'm writing to you from the station..."></textarea>
 
         <div style="margin-top:10px;display:flex;gap:8px;">
-          <button id="flipBtn">Retourner</button>
-          <button id="saveBtn">Télécharger</button>
+          <button id="flipBtn">Flip</button>
+          <button id="sendBtn">Send</button>
+          <button id="undoBtn">Undo</button>
         </div>
       </div>
 
       <div class="panel previewWrap">
-        <!-- postcard from working code -->
         <div class="postcard" id="postcard">
           <div class="inner">
             <div class="face front" id="frontFace"></div>
@@ -171,72 +155,118 @@
   </div>
 
 <script>
-const card=document.getElementById('postcard');
-const inner=card.querySelector('.inner');
-const back=document.getElementById('backFace');
-const canvas=document.getElementById('drawCanvas');
-const ctx=canvas.getContext('2d');
-const textareaDisplay=document.getElementById('textAreaDisplay');
-const textareaInput=document.getElementById('textArea');
-let drawing=false,lastX=0,lastY=0;
-let mode='typed';
+const card = document.getElementById('postcard');
+const front = document.getElementById('frontFace');
+const back = document.getElementById('backFace');
+const canvas = document.getElementById('drawCanvas');
+const ctx = canvas.getContext('2d');
+const textareaDisplay = document.getElementById('textAreaDisplay');
+const textareaInput = document.getElementById('textArea');
+const undoBtn = document.getElementById('undoBtn');
 
-/* --- canvas setup --- */
-function resizeCanvas(){
-  canvas.width=back.clientWidth;
-  canvas.height=back.clientHeight;
+let drawing = false, lastX = 0, lastY = 0;
+let mode = 'typed';
+let strokes = [];
+let currentStroke = [];
+
+// --- canvas setup ---
+function resizeCanvas() {
+  canvas.width = back.clientWidth;
+  canvas.height = back.clientHeight;
+  redrawStrokes();
 }
-window.addEventListener('resize',resizeCanvas);
+window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
-ctx.strokeStyle='#1e1b16';
-ctx.lineWidth=2;
-ctx.lineCap='round';
 
-/* --- drawing --- */
-canvas.addEventListener('mousedown',e=>{
-  if(mode!=='handwrite')return;
-  drawing=true;
-  [lastX,lastY]=[e.offsetX,e.offsetY];
+ctx.strokeStyle = '#1e1b16';
+ctx.lineWidth = 2;
+ctx.lineCap = 'round';
+
+// --- drawing ---
+canvas.addEventListener('mousedown', e => {
+  if (mode !== 'handwrite') return;
+  drawing = true;
+  [lastX, lastY] = [e.offsetX, e.offsetY];
+  currentStroke = [[lastX, lastY]];
 });
-canvas.addEventListener('mousemove',e=>{
-  if(!drawing||mode!=='handwrite')return;
+
+canvas.addEventListener('mousemove', e => {
+  if (!drawing || mode !== 'handwrite') return;
   ctx.beginPath();
-  ctx.moveTo(lastX,lastY);
-  ctx.lineTo(e.offsetX,e.offsetY);
+  ctx.moveTo(lastX, lastY);
+  ctx.lineTo(e.offsetX, e.offsetY);
   ctx.stroke();
-  [lastX,lastY]=[e.offsetX,e.offsetY];
+  [lastX, lastY] = [e.offsetX, e.offsetY];
+  currentStroke.push([lastX, lastY]);
 });
-['mouseup','mouseleave'].forEach(ev=>canvas.addEventListener(ev,()=>drawing=false));
 
-/* --- controls --- */
-document.getElementById('flipBtn').onclick=()=>card.classList.toggle('flipped');
+['mouseup', 'mouseleave'].forEach(ev => canvas.addEventListener(ev, () => {
+  if (drawing && currentStroke.length > 0) strokes.push([...currentStroke]);
+  drawing = false;
+}));
 
-document.getElementById('mode').onchange=e=>{
-  mode=e.target.value;
-  textareaDisplay.style.display=mode==='typed'?'block':'none';
-  canvas.style.pointerEvents=mode==='handwrite'?'auto':'none';
+// --- undo ---
+function undoLastStroke() {
+  if (strokes.length === 0) return;
+  strokes.pop();
+  redrawStrokes();
+}
+undoBtn.addEventListener('click', undoLastStroke);
+
+function redrawStrokes() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = '#1e1b16';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  for (let stroke of strokes) {
+    ctx.beginPath();
+    ctx.moveTo(stroke[0][0], stroke[0][1]);
+    for (let i = 1; i < stroke.length; i++) {
+      ctx.lineTo(stroke[i][0], stroke[i][1]);
+    }
+    ctx.stroke();
+  }
+}
+
+// --- controls ---
+document.getElementById('flipBtn').onclick = () => card.classList.toggle('flipped');
+
+document.getElementById('mode').onchange = e => {
+  mode = e.target.value;
+  textareaDisplay.style.display = mode === 'typed' ? 'block' : 'none';
+  canvas.style.pointerEvents = mode === 'handwrite' ? 'auto' : 'none';
 };
 
-/* --- sync typed text --- */
-textareaInput.addEventListener('input',()=>{
-  textareaDisplay.value=textareaInput.value;
+// --- sync typed text ---
+textareaInput.addEventListener('input', () => {
+  textareaDisplay.value = textareaInput.value;
 });
 
-/* --- upload background --- */
-document.getElementById('uploadVerso').addEventListener('change',ev=>{
-  const f=ev.target.files[0];
-  if(!f)return;
-  const url=URL.createObjectURL(f);
-  back.style.setProperty('--verso-img',`url('${url}')`);
+// --- upload front image ---
+document.getElementById('uploadFront').addEventListener('change', ev => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    front.style.background = `url('${e.target.result}') center/cover no-repeat`;
+    front.dataset.image = e.target.result;
+  };
+  reader.readAsDataURL(f);
 });
 
-/* --- export --- */
-document.getElementById('saveBtn').onclick=()=>{
-  const link=document.createElement('a');
-  link.href=canvas.toDataURL('image/png');
-  link.download='carte_postale.png';
-  link.click();
+// --- send postcard (open in viewer) ---
+document.getElementById('sendBtn').onclick = () => {
+  const postcardData = {
+    mode,
+    text: textareaInput.value,
+    strokes,
+    frontImage: front.dataset.image || "https://upload.wikimedia.org/wikipedia/commons/6/63/Postcard_front_sample.jpg"
+  };
+  const blob = new Blob([JSON.stringify(postcardData)], { type: "application/json" });
+  const blobUrl = URL.createObjectURL(blob);
+  window.open(`viewer.html?src=${encodeURIComponent(blobUrl)}`, "_blank");
 };
 </script>
 </body>
 </html>
+
